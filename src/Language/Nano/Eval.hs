@@ -11,6 +11,8 @@ module Language.Nano.Eval
 import Control.Exception (throw, catch)
 import Language.Nano.Types
 import Language.Nano.Parser
+import Data.Array.Base (bOOL_BIT)
+import Foreign.C (e2BIG)
 
 --------------------------------------------------------------------------------
 execFile :: FilePath -> IO Value
@@ -167,12 +169,85 @@ exitError (Error msg) = return (VErr msg)
 --------------------------------------------------------------------------------
 eval :: Env -> Expr -> Value
 --------------------------------------------------------------------------------
-eval = error "TBD:eval"
+eval _ (EInt n) = VInt n
+eval env (EVar v) = lookupId v env
+eval env (EBin b e1 e2) = 
+  let v1 = eval env e1
+      v2 = eval env e2
+  in evalOp b v1 v2
+
+eval env (EBool b) = VBool b
+eval env (EIf e1 e2 e3) =
+  case eval env e1 of
+    VBool True -> eval env e2
+    VBool False -> eval env e3
+    _           -> throw (Error "type error")
+
+
+eval env (ELet id e1 e2) = 
+  let newEnv = extendEnv id v1 env
+      v1     = eval newEnv e1
+  in eval newEnv e2
+
+
+eval env (ELam id e) = VClos env id e
+
+eval env (EApp e1 e2) =
+  case eval env e1 of
+    VClos closX x body ->
+      eval (extendEnv x (eval env e2) closX) body
+    VPrim f ->
+      f (eval env e2)
+    _ ->
+      throw (Error "type error")
+
+
+eval _ ENil = VNil
+
+
+
+
+
+  
+
+
+
 
 --------------------------------------------------------------------------------
 evalOp :: Binop -> Value -> Value -> Value
 --------------------------------------------------------------------------------
-evalOp = error "TBD:evalOp"
+evalOp Plus (VInt v1) (VInt v2) = VInt (v1+v2)
+evalOp Plus _ _ = throw (Error "type error")
+
+evalOp Minus (VInt v1) (VInt v2) = VInt (v1-v2)
+evalOp Minus _ _ = throw (Error "type error")
+
+evalOp Mul (VInt v1) (VInt v2) = VInt (v1*v2)
+evalOp Mul _ _ = throw (Error "type error")
+
+evalOp Eq v1 v2 = VBool (v1 == v2)
+evalOp Ne v1 v2 = VBool (v1 /= v2)
+
+evalOp Lt (VInt v1) (VInt v2) = VBool (v1 < v2)
+evalOp Lt _ _ = throw (Error "type error")
+
+evalOp Le (VInt v1) (VInt v2) = VBool (v1 <= v2)
+evalOp Le _ _ = throw (Error "type error")
+
+evalOp And (VBool b1) (VBool b2) = VBool (b1 && b2)
+evalOp And _ _ = throw (Error "type error")
+
+evalOp Or (VBool b1) (VBool b2) = VBool (b1 || b2)
+evalOp Or _ _ = throw (Error "type error")
+
+evalOp Cons v1 v2 = VPair v1 v2
+evalOp Cons _ _ = throw (Error "type error")
+
+
+
+
+
+
 
 --------------------------------------------------------------------------------
 -- | `lookupId x env` returns the most recent
@@ -191,7 +266,10 @@ evalOp = error "TBD:evalOp"
 --------------------------------------------------------------------------------
 lookupId :: Id -> Env -> Value
 --------------------------------------------------------------------------------
-lookupId = error "TBD:lookupId"
+lookupId id [] = throw (Error ("unbound variable: " ++ id))
+lookupId id ((var,val):ids)
+  | id == var = val
+  | otherwise = lookupId id ids
 
 
 --------------------------------------------------------------------------------
@@ -200,13 +278,24 @@ lookupId = error "TBD:lookupId"
 --------------------------------------------------------------------------------
 extendEnv :: Id -> Value -> Env -> Env
 --------------------------------------------------------------------------------
-extendEnv x v env = error "TBD:extendEnv"
+extendEnv x v env = (x,v):env
+
+my_head :: Value -> Value
+my_head (VPair v1 _) = v1
+my_head VNil         = throw (Error "empty list")
+my_head _            = throw (Error "type error")
+
+my_tail :: Value -> Value
+my_tail (VPair _ v2) = v2
+my_tail VNil         = throw (Error "empty list")
+my_tail _            = throw (Error "type error")
 
 
 prelude :: Env
 prelude =
-  [ -- HINT: you may extend this "built-in" environment
-    -- with some "operators" that you find useful...
+  [ 
+    ("head", VPrim my_head)
+    ,("tail", VPrim my_tail)
   ]
 
 env0 :: Env
